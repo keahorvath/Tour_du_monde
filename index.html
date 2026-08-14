@@ -124,7 +124,19 @@ svg.map{display:block;width:100%;height:auto}
 .sec ul{margin:0 0 10px;padding-left:17px}
 .sec li{margin-bottom:2px}
 .note{font-style:italic;margin:10px 0 0}
-.todo{color:var(--ink-soft);font-size:13.5px;margin:0}
+.todo{color:var(--ink-soft);font-size:13.5px;margin:0}.notes{list-style:none;padding:0;margin:0}
+.notes li{padding:9px 0;border-bottom:1px solid var(--rule);font-size:13.5px;line-height:1.45}
+.notes li:last-child{border-bottom:none}
+.notes li.fav{padding-left:10px;border-left:2px solid var(--culture);margin-left:-12px}
+.notes .th{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--culture);display:block;margin-bottom:3px}
+.notes .src{display:inline-flex;width:14px;height:14px;color:var(--ink-soft);margin-left:5px;vertical-align:-2px}
+.notes .src svg{width:9px;height:9px}
+.bk{margin:0 0 4px;font-size:14.5px;line-height:1.35}
+.bkm{margin:0;font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink-soft)}
+.sec .stars{display:inline-block;margin-top:8px}
+
 .rl{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;
   border:1px solid var(--rule);border-radius:50%;color:var(--cuisine);text-decoration:none;
   vertical-align:-4px;margin-left:5px;background:#fff;
@@ -146,6 +158,9 @@ dl.facts dd{margin:0}
 .tags{margin-top:11px}
 .tag{display:inline-block;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
   border:1px solid var(--rule);padding:3px 7px;border-radius:2px;color:var(--ink-soft);margin:0 5px 5px 0}
+.load{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;color:var(--ink-soft);
+  margin:14px 0 -6px;min-height:14px}
+.load.ok{color:var(--lecture)} .load.bad{color:var(--cuisine)}
 
 footer{border-top:1px solid var(--rule);padding:20px 0 40px;font-family:var(--mono);font-size:11px;
   color:var(--ink-soft);line-height:1.7}
@@ -180,6 +195,8 @@ footer{border-top:1px solid var(--rule);padding:20px 0 40px;font-family:var(--mo
       <button role="tab" id="tab-list" aria-selected="false" aria-controls="v-list">List</button>
     </nav>
   </header>
+
+  <p class="load" id="load"></p>
 
   <section class="view on" id="v-map" role="tabpanel" aria-labelledby="tab-map">
     <div class="mapbox"><svg class="map" id="map" viewBox="-2.30 -1.92 4.60 3.56" role="img"
@@ -236,6 +253,16 @@ const ENTRIES={"AFG":{"iso":"AFG","name":"Afghanistan","cuisine":{"done":true,"d
 
 </script>
 <script>
+/* =========================================================================
+   Google Sheets — collez ici l'URL « Publier sur le web » (format CSV)
+   de chaque fichier. Videz une ligne pour désactiver la lecture en direct.
+   ========================================================================= */
+const SHEETS={
+  food:   'https://docs.google.com/spreadsheets/d/e/2PACX-1vSpjaixC1RkJ9AtyMN8g5jqwgNK8u6kPERgagsrlDdS53sQojwXaJvgPt_rgm91Og/pub?gid=221034143&single=true&output=csv',
+  culture:'https://docs.google.com/spreadsheets/d/e/2PACX-1vTshncDiC5WySyakmCSaeziyWVxnQk4m63hkI6vUpl-9CESTXHhGbIFM-VOANtGWw/pub?gid=1252971606&single=true&output=csv',
+  books:  'https://docs.google.com/spreadsheets/d/e/2PACX-1vTYOSg2B4P6Te5aNrTgom7aPpuQU_VwnLvY0EejVgi52oATWxZgijISMlkXmWdgtQ/pub?gid=1794631320&single=true&output=csv'
+};
+
 const $=s=>document.querySelector(s);
 const lvl=e=>!e?0:(e.cuisine.done?1:0)+(e.culture.done?1:0)+(e.book.done?1:0);
 const stamp=e=>`<span class="stamp"><i class="c1${e&&e.cuisine.done?' d':''}"></i><i class="c2${e&&e.culture.done?' d':''}"></i><i class="c3${e&&e.book.done?' d':''}"></i></span>`;
@@ -249,12 +276,88 @@ const miss=f=>`<div class="photo">Photo not found<br><span>images/${f}</span></d
 const stars=n=>n?`<span class="stars">${'★'.repeat(n)}<s>${'★'.repeat(5-n)}</s></span>`:'';
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+/* ---- CSV ---- */
+function parseCSV(s){
+  s=s.replace(/\r\n?/g,'\n');
+  const out=[];let row=[],f='',q=false;
+  for(let i=0;i<s.length;i++){const c=s[i];
+    if(q){ if(c==='"'){ if(s[i+1]==='"'){f+='"';i++} else q=false } else f+=c }
+    else if(c==='"')q=true;
+    else if(c===','){row.push(f);f=''}
+    else if(c==='\n'){row.push(f);out.push(row);row=[];f=''}
+    else f+=c;
+  }
+  if(f!==''||row.length){row.push(f);out.push(row)}
+  return out;
+}
+function records(text){
+  const t=parseCSV(text);if(!t.length)return[];
+  const head=t[0].map(h=>h.replace(/^\ufeff/,'').trim().toLowerCase());
+  return t.slice(1).map(r=>{const o={};head.forEach((h,i)=>o[h]=(r[i]||'').trim());return o})
+          .filter(o=>Object.values(o).some(v=>v));
+}
+const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function pdate(s){
+  if(!s)return null;let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m)return{ds:+m[1]*10000+ +m[2]*100+ +m[3],txt:+m[3]+' '+MON[+m[2]-1]+' '+m[1]};
+  m=s.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})/);
+  if(m){let d=+m[1],mo=+m[2];if(d<=12&&mo>12){const x=d;d=mo;mo=x}
+    return{ds:+m[3]*10000+mo*100+d,txt:d+' '+MON[mo-1]+' '+m[3]}}
+  const dt=new Date(s);
+  if(!isNaN(dt))return{ds:dt.getFullYear()*10000+(dt.getMonth()+1)*100+dt.getDate(),
+                       txt:dt.getDate()+' '+MON[dt.getMonth()]+' '+dt.getFullYear()};
+  return null;
+}
+const int=v=>{const n=parseInt(String(v).replace(/[^0-9-]/g,''),10);return isNaN(n)?null:n};
+const blank=iso=>({iso,
+  cuisine:{done:false,dishes:[],date:null,ds:0,rating:null,comment:null,photo:null},
+  culture:{done:false,notes:[]},
+  book:{done:false,title:null,author:null,lang:null,year:null,date:null,ds:0,rating:null,comment:null}});
+
+function build(food,culture,books){
+  const E={},get=iso=>E[iso]||(E[iso]=blank(iso));
+  (food||[]).forEach(r=>{
+    const iso=(r.iso||'').toUpperCase();if(!iso)return;
+    const c=get(iso).cuisine,d=pdate(r.date);
+    c.dishes=(r.dishes||'').split('\n').map(l=>l.trim()).filter(Boolean).map(l=>{
+      const i=l.indexOf('|');
+      return i<0?{n:l}:{n:l.slice(0,i).trim(),u:l.slice(i+1).trim()};
+    });
+    if(d){c.date=d.txt;c.ds=d.ds}
+    c.rating=int(r.rating);c.comment=r.comment||null;
+    c.photo=r.photo||(d?iso.toLowerCase()+'.jpg':null);
+    c.done=!!(d&&c.rating);
+  });
+  (culture||[]).forEach(r=>{
+    const iso=(r.iso||'').toUpperCase();if(!iso||!r.note)return;
+    const k=get(iso).culture,d=pdate(r.date);
+    k.notes.push({theme:r.theme||'',note:r.note,source:r.source||'',
+                  date:d?d.txt:'',fav:/^(x|yes|oui|true|1)$/i.test(r.favourite||'')});
+    k.done=true;
+  });
+  (books||[]).forEach(r=>{
+    const iso=(r.iso||'').toUpperCase();if(!iso||!r.title)return;
+    const b=get(iso).book,d=pdate(r.date_read||r.date);
+    b.title=r.title;b.author=r.author||null;b.lang=r.original_language||null;
+    b.year=int(r.year);b.rating=int(r.rating);b.comment=r.comment||null;
+    if(d){b.date=d.txt;b.ds=d.ds}
+    b.done=!!d;
+  });
+  Object.keys(E).forEach(iso=>{ if(!GEO[iso]) delete E[iso] });   // code inconnu -> ignoré
+  Object.values(E).forEach(e=>e.culture.notes.sort((a,b)=>(b.fav?1:0)-(a.fav?1:0)));
+  return E;
+}
+
 /* ---- statistiques ---- */
-const all=Object.values(ENTRIES), TOTAL=Object.keys(GEO).length;
-const setStat=(id,n)=>$(id).innerHTML=n+`<em>${Math.round(n/TOTAL*100)}%</em>`;
-setStat('#s1',all.filter(e=>e.cuisine.done).length);
-setStat('#s2',all.filter(e=>e.culture.done).length);
-setStat('#s3',all.filter(e=>e.book.done).length);
+let DATA=ENTRIES;
+const TOTAL=Object.keys(GEO).length;
+function stats(){
+  const all=Object.values(DATA);
+  const setStat=(id,n)=>$(id).innerHTML=n+`<em>${Math.round(n/TOTAL*100)}%</em>`;
+  setStat('#s1',all.filter(e=>e.cuisine.done).length);
+  setStat('#s2',all.filter(e=>e.culture.done).length);
+  setStat('#s3',all.filter(e=>e.book.done).length);
+}
 
 /* ---- carte ---- */
 const map=$('#map'),NS='http://www.w3.org/2000/svg';
@@ -270,19 +373,23 @@ function rob(lo,la){
   const x=(A[i]+(A[i+1]-A[i])*f)*lo*Math.PI/180*0.8487, y=(B[i]+(B[i+1]-B[i])*f)*1.3523;
   return [x.toFixed(4),(la<0?y:-y).toFixed(4)];
 }
-const order=Object.keys(GEO).sort((a,b)=>lvl(ENTRIES[a])-lvl(ENTRIES[b]));
-for(const iso of order){
-  const G=GEO[iso],e=ENTRIES[iso],lv=lvl(e),hit=e?' hit':'';
-  if(G.d) g+=`<path class="cty${hit}" data-lv="${lv}" data-iso="${iso}" d="${G.d}"/>`;
-  if(G.t) g+=`<circle class="cty dot${hit}${e?'':' faint'}" data-lv="${lv}" data-iso="${iso}" cx="${G.x}" cy="${G.y}" r="${e?0.017:0.009}"/>`;
+const GRAT=g;
+function paint(){
+  let s=GRAT;
+  const order=Object.keys(GEO).sort((a,b)=>lvl(DATA[a])-lvl(DATA[b]));
+  for(const iso of order){
+    const G=GEO[iso],e=DATA[iso],lv=lvl(e),hit=e?' hit':'';
+    if(G.d) s+=`<path class="cty${hit}" data-lv="${lv}" data-iso="${iso}" d="${G.d}"/>`;
+    if(G.t) s+=`<circle class="cty dot${hit}${e?'':' faint'}" data-lv="${lv}" data-iso="${iso}" cx="${G.x}" cy="${G.y}" r="${e?0.017:0.009}"/>`;
+  }
+  map.innerHTML=s;
 }
-map.innerHTML=g;
 
 const tip=$('#tip');
 map.addEventListener('mousemove',ev=>{
   const t=ev.target.closest('[data-iso]');
   if(!t){tip.style.opacity=0;return}
-  const iso=t.dataset.iso,e=ENTRIES[iso];
+  const iso=t.dataset.iso,e=DATA[iso];
   tip.innerHTML=`<b>${esc(GEO[iso].n)}</b>`+(e?`<div class="st">${stamp(e)}</div>`:
     `<div class="st" style="opacity:.7">not on the list yet</div>`);
   tip.style.opacity=1;
@@ -297,10 +404,10 @@ const conts=[...new Set(Object.values(GEO).map(g=>g.c))].filter(Boolean).sort();
 $('#fc').insertAdjacentHTML('beforeend',conts.map(c=>`<option>${c}</option>`).join(''));
 function draw(){
   const q=$('#q').value.trim().toLowerCase(),fc=$('#fc').value,fs=$('#fs').value,so=$('#so').value;
-  let L=Object.keys(GEO).map(iso=>({iso,g:GEO[iso],e:ENTRIES[iso]}));
+  let L=Object.keys(GEO).map(iso=>({iso,g:GEO[iso],e:DATA[iso]}));
   if(fs==='done')L=L.filter(r=>lvl(r.e)>0); else if(fs==='todo')L=L.filter(r=>lvl(r.e)===0);
   if(fc)L=L.filter(r=>r.g.c===fc);
-  if(q)L=L.filter(r=>(r.g.n+' '+r.iso+' '+(r.e?r.e.cuisine.dishes.map(d=>d.n).join(' '):'')).toLowerCase().includes(q));
+  if(q)L=L.filter(r=>(r.g.n+' '+r.iso+' '+(r.e?r.e.cuisine.dishes.map(d=>d.n).join(' ')+' '+(r.e.book.title||'')+' '+(r.e.book.author||''):'')).toLowerCase().includes(q));
   L.sort((a,b)=>so==='recent'?((b.e&&b.e.cuisine.ds)||0)-((a.e&&a.e.cuisine.ds)||0)||a.g.n.localeCompare(b.g.n,'en')
     :so==='note'?((b.e&&b.e.cuisine.rating)||0)-((a.e&&a.e.cuisine.rating)||0)||a.g.n.localeCompare(b.g.n,'en')
     :a.g.n.localeCompare(b.g.n,'en'));
@@ -316,7 +423,34 @@ function draw(){
 }
 ['#q','#fc','#fs','#so'].forEach(s=>$(s).addEventListener('input',draw));
 $('#rows').addEventListener('click',ev=>{const t=ev.target.closest('.row');if(t&&!t.disabled)openCountry(t.dataset.iso)});
-draw();
+function render(){stats();paint();draw()}
+
+/* ---- boot ---- */
+const note=$('#load');
+async function grab(url){
+  const r=await fetch(url+'&_='+Date.now());
+  if(!r.ok)throw new Error(r.status);
+  return records(await r.text());
+}
+async function boot(){
+  render();
+  const urls=[SHEETS.food,SHEETS.culture,SHEETS.books];
+  if(!urls.some(Boolean)){note.textContent='Built-in snapshot — no sheets connected.';return}
+  note.textContent='Loading from Google Sheets…';
+  try{
+    const [f,c,b]=await Promise.all(urls.map(u=>u?grab(u):Promise.resolve([])));
+    const E=build(f,c,b);
+    if(!Object.keys(E).length)throw new Error('empty');
+    DATA=E;render();
+    note.textContent=`Live from Google Sheets · ${f.length} food rows, ${c.length} culture notes, ${b.length} book rows`;
+    note.className='load ok';
+  }catch(err){
+    note.textContent='Could not reach the sheets — showing the built-in snapshot. '+
+      (location.protocol==='file:'?'Open the site through its web address, not as a local file.':'');
+    note.className='load bad';
+  }
+}
+boot();
 
 /* ---- country facts ---- */
 const num=n=>n>=1e9?(n/1e9).toFixed(2)+' bn':n>=1e6?(n/1e6).toFixed(n>=1e7?0:1)+'M':n>=1e4?Math.round(n/1e3)+'k':n.toLocaleString('en');
@@ -343,8 +477,8 @@ function idcard(iso){
 /* ---- country page ---- */
 const sheet=$('#sheet'),scrim=$('#scrim');let last=null;
 function openCountry(iso){
-  const g=GEO[iso],e=ENTRIES[iso];if(!e)return;
-  const c=e.cuisine;
+  const g=GEO[iso],e=DATA[iso];if(!e)return;
+  const c=e.cuisine,k=e.culture,b=e.book;
   sheet.innerHTML=`<button class="x" id="close" aria-label="Close">×</button>
     <div class="meta">${iso} · ${esc(g.c||'')}</div>
     <h2 id="shname">${esc(g.n)}</h2>${stamp(e)}
@@ -358,10 +492,18 @@ function openCountry(iso){
         ${stars(c.rating)}${c.comment?`<p class="note">« ${esc(c.comment)} »</p>`:''}`
        :`<p class="todo">Dish picked out: ${c.dishes.map(dishInline).join(', ')||'still to choose'}. Not cooked yet.</p>`}
     </div>
-    <div class="sec c2"><h3>Culture</h3>
-      <p class="todo">Nothing yet. History, geography, traditions, whatever stuck with you.</p></div>
-    <div class="sec c3"><h3>Reading</h3>
-      <p class="todo">No book logged. Title, author, year, what you thought.</p></div>`;
+    <div class="sec c2"><h3>Culture${k.notes.length?`<span>${k.notes.length} note${k.notes.length>1?'s':''}</span>`:''}</h3>
+      ${k.notes.length?`<ul class="notes">${k.notes.map(n=>`<li${n.fav?' class="fav"':''}>
+        ${n.theme?`<span class="th">${esc(n.theme)}</span>`:''}${esc(n.note)}
+        ${n.source?`<a class="src" href="${esc(n.source)}" target="_blank" rel="noopener" title="Source">${ICON}</a>`:''}
+      </li>`).join('')}</ul>`
+      :`<p class="todo">Nothing yet. History, geography, traditions, whatever stuck with you.</p>`}</div>
+    <div class="sec c3"><h3>Reading${b.date?`<span>${b.date}</span>`:''}</h3>
+      ${b.title?`<p class="bk"><b>${esc(b.title)}</b>${b.author?`<br>${esc(b.author)}`:''}</p>
+        ${b.lang||b.year?`<p class="bkm">${[b.lang,b.year].filter(Boolean).map(esc).join(' · ')}</p>`:''}
+        ${b.done?`${stars(b.rating)}${b.comment?`<p class="note">« ${esc(b.comment)} »</p>`:''}`
+                :`<p class="todo">Picked out, not read yet.</p>`}`
+      :`<p class="todo">No book logged. Title, author, year, what you thought.</p>`}</div>`;
   sheet.classList.add('on');scrim.classList.add('on');last=document.activeElement;
   sheet.focus();$('#close').onclick=shut;
   document.querySelectorAll('.sel').forEach(n=>n.classList.remove('sel'));
